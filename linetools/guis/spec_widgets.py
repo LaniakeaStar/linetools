@@ -234,6 +234,12 @@ class ExamineSpecWidget(QWidget):
         # Draw on init
         self.on_draw(guessfile=guessfile)
 
+    def set_spectrum(self, new_spec): # Set a new spectrum
+        self.spec = new_spec
+        self.select = 0  # Only 1 spectrum when you start smoothing
+        self.on_draw()
+
+    
     # Setup the spectrum plotting info
     def init_spec(self, xlim=None, ylim=None):
         """ Initialize parameters for plotting the spectrum

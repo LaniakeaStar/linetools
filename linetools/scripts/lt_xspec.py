@@ -14,7 +14,7 @@ def main(*args, **kwargs):
     import argparse
 
     parser = argparse.ArgumentParser(description='Parser for lt_xspec v1.2; \n Note: Extra arguments are passed to read_spec (e.g. --flux_tag=FX)')
-    parser.add_argument("file", type=str, help="Spectral file; specify extension by appending #exten#")
+    parser.add_argument("files", nargs='+', type=str, help="One or more spectral files; specify extension with #exten# if needed")
     parser.add_argument("-guessfile", "--guessfile", type=str, help="Igmguesses file, see https://github.com/pyigm/pyigm/blob/master/docs/igmguesses.rst ")
     parser.add_argument("-z", "--zsys", type=float, help="System Redshift")
     parser.add_argument("--norm", help="Show spectrum continuum normalized (if continuum is provided)",
@@ -32,6 +32,8 @@ def main(*args, **kwargs):
     #pargs = parser.parse_args()
     pargs, unknown = parser.parse_known_args()
 
+
+
     from qtpy.QtWidgets import QApplication
     from linetools.guis.xspecgui import XSpecGui
 
@@ -41,14 +43,19 @@ def main(*args, **kwargs):
     else:
         norm = False
 
-    # Extension
-    file = pargs.file
-    if pargs.file[-1] == '#':
-        prs = pargs.file.split('#')
-        exten = int(prs[1])
-        file = prs[0]
-    else:
-        exten = (pargs.exten if hasattr(pargs, 'exten') else 0)
+    # Parse multiple files and extensions
+    files = []
+    extens = []
+
+    for f in pargs.files:
+        # If the file ends with #, then it has an extension
+        if f[-1] == '#':
+            prs = f.split('#')
+            files.append(prs[0])
+            extens.append(int(prs[1]))
+        else:
+            files.append(f)
+            extens.append(pargs.exten if pargs.exten is not None else 0)
 
     # zsys
     zsys = (pargs.zsys if hasattr(pargs, 'zsys') else None)
@@ -87,8 +94,8 @@ def main(*args, **kwargs):
     else:
         scale = pargs.scale
     #
-    gui = XSpecGui(file, guessfile=guessfile, zsys=zsys, norm=norm, exten=exten,
-                   rsp_kwargs=rsp_kwargs, air=pargs.air,
-                   screen_scale=scale)
+    gui = XSpecGui(files, guessfile=guessfile, zsys=zsys, norm=norm, exten=extens,
+               rsp_kwargs=rsp_kwargs, air=pargs.air,
+               screen_scale=scale)
     gui.show()
     app.exec_()

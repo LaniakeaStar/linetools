@@ -58,6 +58,14 @@ class XSpecGui(QMainWindow):
         #QtCore.pyqtRemoveInputHook()
         #xdb.set_trace()
         #QtCore.pyqtRestoreInputHook()
+        if isinstance(ispec, list):
+            self.multispec_mode = True
+            self.ispec_list = ispec
+            self.exten_list = exten if isinstance(exten, list) else [0] * len(ispec)
+        else:
+            self.multispec_mode = False
+            self.ispec_list = [ispec]
+            self.exten_list = [exten if exten is not None else 0]
 
         self.scale = screen_scale
 
@@ -107,13 +115,18 @@ class XSpecGui(QMainWindow):
             if not norm:
                 voigtsfit = voigtsfit * spec.co
 
+        self.spec_list = []
+        for i,f in enumerate(self.ispec_list):
+            spec, _ = ltgu.read_spec(f, exten=self.exten_list[i], norm=norm, rsp_kwargs=rsp_kwargs)
+            self.spec_list.append(spec)
+
 
         # Hook the spec widget to Plot Line
-        self.spec_widg = ltgsp.ExamineSpecWidget(ispec,guessfile=guessfile,voigtsfit=voigtsfit,status=self.statusBar,
-                                                 parent=self, llist=self.pltline_widg.llist,
-                                                zsys=zsys, norm=norm, exten=exten, abs_sys=abs_sys,
-                                                screen_scale=self.scale,
-                                                 rsp_kwargs=rsp_kwargs, **kwargs)
+        self.spec_widg = ltgsp.ExamineSpecWidget(self.spec_list[0], guessfile=guessfile, voigtsfit=voigtsfit,
+                                         status=self.statusBar, parent=self, llist=self.pltline_widg.llist,
+                                         zsys=zsys, norm=norm, exten=self.exten_list[0],
+                                         abs_sys=abs_sys, screen_scale=self.scale,
+                                         rsp_kwargs=rsp_kwargs, **kwargs)
         # Reset redshift from spec
         if zsys is None:
             if hasattr(self.spec_widg.spec, 'z'):
@@ -131,6 +144,12 @@ class XSpecGui(QMainWindow):
         self.pltline_widg.spec_widg = self.spec_widg
         # Multi spec
         self.mspec_widg = ltgsp.MultiSpecWidget(self.spec_widg)
+
+        self.mspec_widg.clear()
+        for f in self.ispec_list:
+            self.mspec_widg.addItem(str(f))
+
+        self.mspec_widg.currentRowChanged.connect(self.change_spectrum)
 
 
         self.spec_widg.canvas.mpl_connect('button_press_event', self.on_click)
@@ -203,6 +222,14 @@ class XSpecGui(QMainWindow):
     # Quit
     def quit(self):
         self.close()
+    
+    def change_spectrum(self, index):
+        """Switch spectrum shown in the main plot"""
+        if index < 0 or index >= len(self.spec_list):
+            return
+        new_spec = self.spec_list[index]
+        self.spec_widg.set_spectrum(new_spec)
+        self.spec_widg.on_draw()
 
 
 def main(args, **kwargs):
