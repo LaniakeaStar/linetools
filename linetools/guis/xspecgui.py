@@ -257,6 +257,9 @@ class XSpecGui(QMainWindow):
         new_spec = self.spec_list[index]
         self.spec_widg.set_spectrum(new_spec)
         self.spec_widg.on_draw()
+        self.spec_widg.ax.relim()
+        self.spec_widg.ax.autoscale_view()
+        self.spec_widg.canvas.draw()
 
 
 def main(args, **kwargs):
