@@ -124,15 +124,20 @@ class XSpecGui(QMainWindow):
                 wave = data[names[0]]
                 flux = data[names[1]]
 
+                # Aquí definimos una unidad válida de flujo
+                flux_unit = u.Unit("erg / (s cm2 Angstrom)")
+
                 if len(names) >= 3:
                     sig = data[names[2]]
-                    spec = XSpectrum1D(wave*u.AA, flux*u.Unit('flux'), sig*u.Unit('flux'))
+                    spec = XSpectrum1D(wave * u.AA, flux * flux_unit, sig * flux_unit)
                 else:
-                    spec = XSpectrum1D(wave*u.AA, flux*u.Unit('flux'))
+                    spec = XSpectrum1D(wave * u.AA, flux * flux_unit)
+
             else:
                 spec, _ = ltgu.read_spec(f, exten=self.exten_list[i], norm=norm, rsp_kwargs=rsp_kwargs)
 
             self.spec_list.append(spec)
+
 
 
         # Hook the spec widget to Plot Line
