@@ -255,7 +255,7 @@ class XSpecGui(QMainWindow):
         self.current_spectrum_index = index
 
         # Check if index is valid
-        ax = self.spec_widg.canvas.x
+        ax = self.spec_widg.canvas.figure.axes[0]
 
         # Clear the current plot
         ax.clear()
