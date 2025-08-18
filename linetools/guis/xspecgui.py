@@ -10,6 +10,7 @@ from qtpy import QtGui
 from qtpy.QtWidgets import QWidget, QLabel, QPushButton, QMainWindow
 from qtpy.QtWidgets import QVBoxLayout, QHBoxLayout
 from qtpy import QtCore
+from qtpy.QtWidgets import QListWidget
 
 from matplotlib import rcParams
 
@@ -164,11 +165,15 @@ class XSpecGui(QMainWindow):
         # Multi spec
         self.mspec_widg = ltgsp.MultiSpecWidget(self.spec_widg)
 
-        self.mspec_widg.clear()
-        for f in self.ispec_list:
-            self.mspec_widg.addItem(str(f))
+        #self.mspec_widg.clear()
+        #for f in self.ispec_list:
+        #    self.mspec_widg.addItem(str(f))
 
-        self.mspec_widg.currentRowChanged.connect(self.change_spectrum)
+        #self.mspec_widg.currentRowChanged.connect(self.change_spectrum)
+
+        self.spec_selector = QListWidget()
+        self.spec_selector.addItems([str(f) for f in self.ispec_list])
+        self.spec_selector.currentRowChanged.connect(self.change_spectrum)
 
 
         self.spec_widg.canvas.mpl_connect('button_press_event', self.on_click)
@@ -183,8 +188,11 @@ class XSpecGui(QMainWindow):
         qbtn = QPushButton(self)
         qbtn.setText('Quit')
         qbtn.clicked.connect(self.quit)
+        #vbox.addWidget(self.pltline_widg)
+        #vbox.addWidget(self.mspec_widg)
+        #vbox.addWidget(qbtn)
         vbox.addWidget(self.pltline_widg)
-        vbox.addWidget(self.mspec_widg)
+        vbox.addWidget(self.spec_selector)  # new widget for spectrum selection
         vbox.addWidget(qbtn)
         extras.setLayout(vbox)
 
