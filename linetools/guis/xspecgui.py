@@ -116,8 +116,24 @@ class XSpecGui(QMainWindow):
                 voigtsfit = voigtsfit * spec.co
 
         self.spec_list = []
-        for i,f in enumerate(self.ispec_list):
-            spec, _ = ltgu.read_spec(f, exten=self.exten_list[i], norm=norm, rsp_kwargs=rsp_kwargs)
+        for i, f in enumerate(self.ispec_list):
+            if f.endswith('.csv'):
+                from linetools.spectra.xspectrum1d import XSpectrum1D
+                import numpy as np
+
+                # Asume que el CSV tiene dos o tres columnas: wave, flux, [optional sigma]
+                data = np.genfromtxt(f, delimiter=',', names=True)
+                wave = data[data.dtype.names[0]]
+                flux = data[data.dtype.names[1]]
+                try:
+                    sig = data[data.dtype.names[2]]
+                    spec = XSpectrum1D.from_array(wave, flux, sig)
+                except IndexError:
+                    spec = XSpectrum1D.from_array(wave, flux)
+
+            else:
+                spec, _ = ltgu.read_spec(f, exten=self.exten_list[i], norm=norm, rsp_kwargs=rsp_kwargs)
+
             self.spec_list.append(spec)
 
 
