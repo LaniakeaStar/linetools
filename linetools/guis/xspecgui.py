@@ -257,11 +257,14 @@ class XSpecGui(QMainWindow):
         new_spec = self.spec_list[index]
         self.spec_widg.set_spectrum(new_spec)
 
-        # Update the plot
-        self.spec_widg.ax.set_xlim(new_spec.wavelength.value.min(), new_spec.wavelength.value.max())
-        self.spec_widg.ax.set_ylim(new_spec.flux.value.min(), new_spec.flux.value.max())
+        # Update the plot limits based on the new spectrum
+        current_ylim = self.spec_widg.axes.get_ylim()
 
         self.spec_widg.on_draw()
+
+
+        self.spec_widg.axes.set_ylim(current_ylim)
+        self.spec_widg.canvas.draw()
 
 
 def main(args, **kwargs):
