@@ -25,6 +25,7 @@ from linetools.analysis import voigt as lav
 from linetools.isgm.abscomponent import AbsComponent
 from linetools.isgm import utils as ltiu
 from linetools.lists.linelist import LineList
+from linetools.spectra.xspectrum1d import XSpectrum1D
 
 
 
@@ -118,19 +119,16 @@ class XSpecGui(QMainWindow):
         self.spec_list = []
         for i, f in enumerate(self.ispec_list):
             if f.endswith('.csv'):
-                from linetools.spectra.xspectrum1d import XSpectrum1D
-                import numpy as np
-
-                # Asume que el CSV tiene dos o tres columnas: wave, flux, [optional sigma]
                 data = np.genfromtxt(f, delimiter=',', names=True)
-                wave = data[data.dtype.names[0]]
-                flux = data[data.dtype.names[1]]
-                try:
-                    sig = data[data.dtype.names[2]]
-                    spec = XSpectrum1D.from_array(wave, flux, sig)
-                except IndexError:
-                    spec = XSpectrum1D.from_array(wave, flux)
+                names = data.dtype.names
+                wave = data[names[0]]
+                flux = data[names[1]]
 
+                if len(names) >= 3:
+                    sig = data[names[2]]
+                    spec = XSpectrum1D(wave*u.AA, flux*u.Unit('flux'), sig*u.Unit('flux'))
+                else:
+                    spec = XSpectrum1D(wave*u.AA, flux*u.Unit('flux'))
             else:
                 spec, _ = ltgu.read_spec(f, exten=self.exten_list[i], norm=norm, rsp_kwargs=rsp_kwargs)
 
