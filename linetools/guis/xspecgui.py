@@ -254,17 +254,26 @@ class XSpecGui(QMainWindow):
         """Switch spectrum shown in the main plot"""
         if index < 0 or index >= len(self.spec_list):
             return
+
+        # Guardamos el ylim actual de la figura
+        try:
+            old_axes = self.spec_widg.canvas.figure.axes[0]  # Primer subplot
+            old_ylim = old_axes.get_ylim()
+        except Exception:
+            old_ylim = None
+
+        # Cambiar espectro
         new_spec = self.spec_list[index]
         self.spec_widg.set_spectrum(new_spec)
-
-        # Update the plot limits based on the new spectrum
-        current_ylim = self.spec_widg.axes.get_ylim()
-
+        
+        # Redibujar
         self.spec_widg.on_draw()
 
-
-        self.spec_widg.axes.set_ylim(current_ylim)
-        self.spec_widg.canvas.draw()
+        # Restaurar el mismo ylim si era válido
+        if old_ylim is not None:
+            new_axes = self.spec_widg.canvas.figure.axes[0]
+            new_axes.set_ylim(old_ylim)
+            self.spec_widg.canvas.draw()
 
 
 def main(args, **kwargs):
