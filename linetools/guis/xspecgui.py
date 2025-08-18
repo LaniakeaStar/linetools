@@ -252,23 +252,24 @@ class XSpecGui(QMainWindow):
     
     def change_spectrum(self, index):
         """Switch spectrum shown in the main plot"""
-        self.current_spectrum_index = index
+        if index < 0 or index >= len(self.spec_list):
+            return
 
-        # Check if index is valid
-        ax = self.spec_widg.canvas.figure.axes[0]
+        new_spec = self.spec_list[index]
 
-        # Clear the current plot
-        ax.clear()
+        # update spec_widg
+        self.spec_widg.set_spectrum(new_spec)
 
-        # Plot the new spectrum
-        self.spec_widg.plot_spectrum(index)
-
-        # Update the title with the new spectrum name
-        ax.relim()
-        ax.autoscale_view()
-
-        # Redraw the canvas
-        self.spec_widg.canvas.draw()
+        # try to update the plot
+        try:
+            ax = self.spec_widg.canvas.figure.axes[0] 
+            ax.clear()  
+            self.spec_widg.on_draw()  # redraw
+            ax.relim()  
+            ax.autoscale_view()
+            self.spec_widg.canvas.draw()
+        except Exception as e:
+            print(f"Error al actualizar el espectro: {e}")
 
 
 
