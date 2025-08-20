@@ -180,7 +180,6 @@ class XSpecGui(QMainWindow):
 
         self.spec_widg.canvas.mpl_connect('button_press_event', self.on_click)
         self.spec_widg.canvas.mpl_connect('draw_event', self._ensure_visible_after_draw)
-        self._ensure_visible_after_draw
 
         # Layout
 
@@ -313,28 +312,22 @@ class XSpecGui(QMainWindow):
         return w * n  # Å en vacío
 
     def _ensure_vacuum_angstrom(self, spec):
-        """ Ensure the spectrum's wavelength is in vacuum Ångströms."""
+        """Ensure wavelength unit is Å. Convert AIR->VAC only if header explicitly says AIR."""
         try:
             unit = getattr(spec.wavelength, 'unit', None)
             if unit is None:
                 return spec
-            
+
             wav = spec.wavelength.to(u.AA).value
 
             meta = getattr(spec, 'meta', {}) or {}
-            hdr_flag = str(meta.get('WAVEFRAME', '')).lower() + ' ' + str(meta.get('AIRORVAC', '')).lower()
-            is_air = ('air' in hdr_flag)
-
-            if not is_air:
-                # Check if the wavelength is in vacuum
-                wav_vac_guess = self._air_to_vacuum_angstrom(wav)
-                delta_rel = np.nanmedian((wav_vac_guess - wav) / np.maximum(wav, 1.0))
-                is_air = (delta_rel > 1e-4)  # secure umbral
+            hdr_flag = (str(meta.get('WAVEFRAME', '')).lower() + ' ' +
+                        str(meta.get('AIRORVAC', '')).lower())
+            is_air = ('air' in hdr_flag) or ('a' == str(meta.get('VACUUM', '')).lower())  # tolerante
 
             if is_air:
                 wav = self._air_to_vacuum_angstrom(wav)
 
-            # Replaces wavelength **in-place** and returns the modified spectrum 
             spec.wavelength = (wav * u.AA)
         except Exception:
             pass
@@ -369,12 +362,10 @@ class XSpecGui(QMainWindow):
         self.spec_widg.on_draw()
         self._autoscale_from_spec(new_spec)
 
-        # redraw
-        self.spec_widg.on_draw()
-        self._autoscale_from_spec(new_spec)
 
 
     def _sync_line_list_to_spec(self, spec):
+        """ Sync the line list redshift to the spectrum's redshift."""
         z = None
         try:
             z_attr = getattr(spec, 'z', None)
@@ -386,14 +377,24 @@ class XSpecGui(QMainWindow):
                     z = float(z_attr[sel])
         except Exception:
             z = None
+
         if z is None or not np.isfinite(z):
             z = 0.0
 
-        self.pltline_widg.llist['z'] = z
         try:
-            self.pltline_widg.zbox.setText('{:.5f}'.format(z))
+            self.pltline_widg.setz(f"{z:.5f}")  
+        except Exception:
+            self.pltline_widg.llist['z'] = z
+            try:
+                self.pltline_widg.zbox.setText(f"{z:.5f}")
+            except Exception:
+                pass
+
+        try:
+            self.pltline_widg.llist['Plot'] = True
         except Exception:
             pass
+
 
     def _ensure_visible_after_draw(self, event=None):
         try:
