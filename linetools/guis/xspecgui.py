@@ -312,7 +312,7 @@ class XSpecGui(QMainWindow):
         return w * n  # Å en vacío
 
     def _ensure_vacuum_angstrom(self, spec):
-        """Ensure wavelength unit is Å. Convert AIR->VAC only if header explicitly says AIR."""
+        """Ensure wavelength is in Å. Convert AIR->VAC if header says AIR or instrument is KCWI."""
         try:
             unit = getattr(spec.wavelength, 'unit', None)
             if unit is None:
@@ -321,17 +321,50 @@ class XSpecGui(QMainWindow):
             wav = spec.wavelength.to(u.AA).value
 
             meta = getattr(spec, 'meta', {}) or {}
-            hdr_flag = (str(meta.get('WAVEFRAME', '')).lower() + ' ' +
-                        str(meta.get('AIRORVAC', '')).lower())
-            is_air = ('air' in hdr_flag) or ('a' == str(meta.get('VACUUM', '')).lower())  # tolerante
+            hdr = (str(meta.get('WAVEFRAME', '')).lower() + ' ' +
+                   str(meta.get('AIRORVAC', '')).lower() + ' ' +
+                   str(meta.get('CTYPE1', '')).lower() + ' ' +
+                   str(meta.get('WCSNAME', '')).lower())
 
-            if is_air:
+            instr = str(meta.get('INSTRUME', '')).lower()
+
+            is_kcwi = ('kcwi' in instr)   
+            says_air = ('air' in hdr) or ('air' in instr)
+
+            if is_kcwi or says_air:
                 wav = self._air_to_vacuum_angstrom(wav)
 
             spec.wavelength = (wav * u.AA)
         except Exception:
             pass
         return spec
+    
+    def _ensure_llist_ready(self):
+        """ Ensure the line list is set and ready to plot"""
+        try:
+            # Si no hay 'List' o está en None, toma la 1ª disponible
+            cur = self.pltline_widg.llist.get('List', None)
+            if (cur is None) or (cur not in self.pltline_widg.lists):
+                if len(self.pltline_widg.lists) > 0:
+                    cur = self.pltline_widg.lists[0]
+                else:
+                    return  # no hay listas cargadas, salir
+                self.pltline_widg.llist['List'] = cur
+
+            # Sincroniza el widget visual
+            try:
+                row = self.pltline_widg.lists.index(cur)
+                self.pltline_widg.llist_widget.setCurrentRow(row)
+            except Exception:
+                pass
+
+            # Asegura que se plotee
+            self.pltline_widg.llist['Plot'] = True
+
+            # Muy importante: que spec_widg y pltline_widg compartan el MISMO dict
+            self.spec_widg.llist = self.pltline_widg.llist
+        except Exception:
+            pass
 
 
 
@@ -352,6 +385,7 @@ class XSpecGui(QMainWindow):
 
         # update the line list redshift
         self._sync_line_list_to_spec(new_spec)
+        self._ensure_llist_ready()
 
         # clear and autoscale
         ax = getattr(self.spec_widg.canvas, 'ax', None)
