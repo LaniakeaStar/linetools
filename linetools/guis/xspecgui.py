@@ -246,30 +246,85 @@ class XSpecGui(QMainWindow):
 
             # Draw
             self.spec_widg.on_draw()
+
+    # New
+    def _finite_vals(self, q):
+        """Returns finite values of a Quantity or array."""
+        vals = np.asarray(q.value if hasattr(q, 'value') else q, dtype=float)
+        return vals[np.isfinite(vals)]
+
+    def _autoscale_from_spec(self, spec, pad_x=0.02, pad_y=0.05, pct_low=1.0, pct_high=99.0, is_norm=None):
+        """Adjust the plot limits based on the spectrum"""
+        
+        ax = getattr(self.spec_widg.canvas, 'ax', None)
+        if ax is None:
+            ax = self.spec_widg.canvas.figure.gca()
+
+        wv = self._finite_vals(spec.wavelength)
+        fx = self._finite_vals(spec.flux)
+
+        if wv.size == 0 or fx.size == 0:
+            return  # nothing to scale
+
+        # 3) X-lims per percentiles + padding
+        x1, x2 = np.nanpercentile(wv, [pct_low, pct_high])
+        xr = (x2 - x1)
+        if xr <= 0:
+            xr = max(1.0, abs(x1))  # fallback
+        ax.set_xlim(x1 - pad_x * xr, x2 + pad_x * xr)
+
+        # 4) Y-lims: if normalized centered ~1; if not, percentiles
+        if is_norm is None:
+            is_norm = getattr(self, 'norm', None)
+            if is_norm is None:
+                med = np.nanmedian(fx)
+                is_norm = (0.5 < med < 2.0)
+
+        if is_norm:
+            med = np.nanmedian(fx)
+            std = np.nanstd(fx)
+            lo = med - 5*std
+            hi = med + 5*std
+            if not np.isfinite(lo) or not np.isfinite(hi) or lo >= hi:
+                lo, hi = np.nanpercentile(fx, [pct_low, pct_high])
+        else:
+            lo, hi = np.nanpercentile(fx, [pct_low, pct_high])
+
+        yr = hi - lo
+        if not np.isfinite(yr) or yr <= 0:
+            lo = np.nanmin(fx)
+            hi = np.nanmax(fx)
+            yr = hi - lo if np.isfinite(hi - lo) and (hi - lo) > 0 else 1.0
+
+        ax.set_ylim(lo - pad_y * yr, hi + pad_y * yr)
+
+        # Redraw
+        self.spec_widg.canvas.draw_idle()
+
+
+
+
     # Quit
     def quit(self):
         self.close()
     
     def change_spectrum(self, index):
-        """Switch spectrum shown in the main plot"""
+        """Switch spectrum shown in the main plot y autocalibra ejes."""
         if index < 0 or index >= len(self.spec_list):
             return
 
         new_spec = self.spec_list[index]
 
-        # update spec_widg
+        # 1) Actualiza el espectro en el widget
         self.spec_widg.set_spectrum(new_spec)
 
-        # try to update the plot
-        try:
-            ax = self.spec_widg.canvas.figure.axes[0] 
-            ax.clear()  
-            self.spec_widg.on_draw()  # redraw
-            ax.relim()  
-            ax.autoscale_view()
-            self.spec_widg.canvas.draw()
-        except Exception as e:
-            print(f"Error al actualizar el espectro: {e}")
+        # 2) Redibuja (esto crea/actualiza artistas en el Axes correcto)
+        self.spec_widg.on_draw()
+
+        # 3) Autocalibra ejes desde los datos del nuevo espectro
+        self._autoscale_from_spec(new_spec)
+
+
 
 
 
