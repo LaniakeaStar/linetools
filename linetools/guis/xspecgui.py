@@ -71,6 +71,8 @@ class XSpecGui(QMainWindow):
 
         self.scale = screen_scale
 
+        self.norm = norm
+
         # Needed to avoid crash in large spectral files
         rcParams['agg.path.chunksize'] = 20000
         rcParams['axes.formatter.useoffset'] = False  # avoid scientific notation in axes tick labels
@@ -137,7 +139,7 @@ class XSpecGui(QMainWindow):
             else:
                 spec, _ = ltgu.read_spec(f, exten=self.exten_list[i], norm=norm, rsp_kwargs=rsp_kwargs)
 
-            self.spec_list.append(spec)
+            self.spec_list.append(self._ensure_vacuum_angstrom(spec))
 
 
 
@@ -177,6 +179,8 @@ class XSpecGui(QMainWindow):
 
 
         self.spec_widg.canvas.mpl_connect('button_press_event', self.on_click)
+        self.spec_widg.canvas.mpl_connect('draw_event', self._ensure_visible_after_draw)
+        self._ensure_visible_after_draw
 
         # Layout
 
@@ -247,7 +251,7 @@ class XSpecGui(QMainWindow):
             # Draw
             self.spec_widg.on_draw()
 
-    # New
+
     def _finite_vals(self, q):
         """Returns finite values of a Quantity or array."""
         vals = np.asarray(q.value if hasattr(q, 'value') else q, dtype=float)
@@ -301,6 +305,40 @@ class XSpecGui(QMainWindow):
         # Redraw
         self.spec_widg.canvas.draw_idle()
 
+        # --- AIR/VAC utils (Edlén/Peck, suficiente para GUI) ---
+    def _air_to_vacuum_angstrom(self, wav_air):
+        w = np.asarray(wav_air, dtype=float)  # Å en aire
+        s2 = (1e4 / w)**2
+        n = 1.0 + 0.0000834254 + 0.02406147/(130.0 - s2) + 0.00015998/(38.9 - s2)
+        return w * n  # Å en vacío
+
+    def _ensure_vacuum_angstrom(self, spec):
+        """ Ensure the spectrum's wavelength is in vacuum Ångströms."""
+        try:
+            unit = getattr(spec.wavelength, 'unit', None)
+            if unit is None:
+                return spec
+            
+            wav = spec.wavelength.to(u.AA).value
+
+            meta = getattr(spec, 'meta', {}) or {}
+            hdr_flag = str(meta.get('WAVEFRAME', '')).lower() + ' ' + str(meta.get('AIRORVAC', '')).lower()
+            is_air = ('air' in hdr_flag)
+
+            if not is_air:
+                # Check if the wavelength is in vacuum
+                wav_vac_guess = self._air_to_vacuum_angstrom(wav)
+                delta_rel = np.nanmedian((wav_vac_guess - wav) / np.maximum(wav, 1.0))
+                is_air = (delta_rel > 1e-4)  # secure umbral
+
+            if is_air:
+                wav = self._air_to_vacuum_angstrom(wav)
+
+            # Replaces wavelength **in-place** and returns the modified spectrum 
+            spec.wavelength = (wav * u.AA)
+        except Exception:
+            pass
+        return spec
 
 
 
@@ -313,19 +351,63 @@ class XSpecGui(QMainWindow):
         if index < 0 or index >= len(self.spec_list):
             return
 
-        new_spec = self.spec_list[index]
+        # ensurance consistency
+        new_spec = self._ensure_vacuum_angstrom(self.spec_list[index])
 
-        # 1) Actualiza el espectro en el widget
+        # update the spectrum
         self.spec_widg.set_spectrum(new_spec)
 
-        # 2) Redibuja (esto crea/actualiza artistas en el Axes correcto)
-        self.spec_widg.on_draw()
+        # update the line list redshift
+        self._sync_line_list_to_spec(new_spec)
 
-        # 3) Autocalibra ejes desde los datos del nuevo espectro
+        # clear and autoscale
+        ax = getattr(self.spec_widg.canvas, 'ax', None)
+        if ax is None:
+            ax = self.spec_widg.canvas.figure.gca()
+        ax.clear()
+
+        self.spec_widg.on_draw()
+        self._autoscale_from_spec(new_spec)
+
+        # redraw
+        self.spec_widg.on_draw()
         self._autoscale_from_spec(new_spec)
 
 
+    def _sync_line_list_to_spec(self, spec):
+        z = None
+        try:
+            z_attr = getattr(spec, 'z', None)
+            if z_attr is not None:
+                if np.ndim(z_attr) == 0:
+                    z = float(z_attr)
+                else:
+                    sel = getattr(self.spec_widg, 'select', 0)
+                    z = float(z_attr[sel])
+        except Exception:
+            z = None
+        if z is None or not np.isfinite(z):
+            z = 0.0
 
+        self.pltline_widg.llist['z'] = z
+        try:
+            self.pltline_widg.zbox.setText('{:.5f}'.format(z))
+        except Exception:
+            pass
+
+    def _ensure_visible_after_draw(self, event=None):
+        try:
+            ax = getattr(self.spec_widg.canvas, 'ax', None)
+            if ax is None:
+                ax = self.spec_widg.canvas.figure.gca()
+            x1, x2 = ax.get_xlim()
+            wv = np.asarray(self.spec_widg.spec.wavelength.to(u.AA).value, dtype=float)
+            fx = np.asarray(self.spec_widg.spec.flux.value if hasattr(self.spec_widg.spec.flux,'value') else self.spec_widg.spec.flux, dtype=float)
+            m = np.isfinite(wv) & np.isfinite(fx) & (wv >= min(x1,x2)) & (wv <= max(x1,x2))
+            if m.sum() < 10:  # if less than 10 points visible, autoscale
+                self._autoscale_from_spec(self.spec_widg.spec)
+        except Exception:
+            pass
 
 
 def main(args, **kwargs):
