@@ -253,18 +253,19 @@ class XSpecGui(QMainWindow):
             #pdb.set_trace()
             #QtCore.pyqtRestoreInputHook()
             wrest = Quantity(float(spltw[0]), unit=self.pltline_widg.llist[
-                self.pltline_widg.llist['List']]._data['wrest'].unit) # spltw[1])  [A bit risky!]
-            z = event.xdata/wrest.value - 1.
+            self.pltline_widg.llist['List']]._data['wrest'].unit)
+            z = event.xdata / wrest.value - 1.0
+
             print("z={:.5f}".format(z))
             self.statusBar().showMessage('z = {:f}'.format(z))
 
-            # <- NUEVO: usa la API del widget (refresca líneas correctamente)
+            # ✅ Usa la API del widget (refresca correctamente las líneas)
             self.pltline_widg.setz('{:.5f}'.format(z))
 
-            # Asegura que sigan compartiendo el MISMO dict (por si el widget lo tocó)
+            # ✅ Asegura que ambos sigan compartiendo el MISMO dict
             self.spec_widg.llist = self.pltline_widg.llist
 
-            # Redibuja
+            # ✅ Redibuja una sola vez
             self.spec_widg.on_draw()
 
 
