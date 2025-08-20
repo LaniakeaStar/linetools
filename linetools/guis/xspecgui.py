@@ -88,6 +88,26 @@ class XSpecGui(QMainWindow):
             init_z=zsys, screen_scale=self.scale)
         self.pltline_widg.setMaximumWidth(int(300*self.scale))
 
+        try:
+            cur = self.pltline_widg.llist.get('List', None)
+            if (cur is None) or (cur not in self.pltline_widg.lists):
+                if len(self.pltline_widg.lists) > 0:
+                    cur = self.pltline_widg.lists[0]
+                else:
+                    # crea una por defecto
+                    self.pltline_widg.llist = ltgu.set_llist('ISM', in_dict=self.pltline_widg.llist)
+                    cur = self.pltline_widg.llist['List']
+                self.pltline_widg.llist['List'] = cur
+            # Refleja en widget visual
+            try:
+                row = self.pltline_widg.lists.index(cur)
+                self.pltline_widg.llist_widget.setCurrentRow(row)
+            except Exception:
+                pass
+            # Plot ON
+            self.pltline_widg.llist['Plot'] = True
+        except Exception:
+            pass
 
         ## Abs sys
         abs_sys = None
@@ -342,23 +362,22 @@ class XSpecGui(QMainWindow):
     def _ensure_llist_ready(self):
         """ Ensure the line list is set and ready to plot"""
         try:
-            # Si no hay 'List' o está en None, toma la 1ª disponible
+            # if llist is None, set to default
             cur = self.pltline_widg.llist.get('List', None)
             if (cur is None) or (cur not in self.pltline_widg.lists):
                 if len(self.pltline_widg.lists) > 0:
                     cur = self.pltline_widg.lists[0]
                 else:
-                    return  # no hay listas cargadas, salir
+                    return  # no line lists available
                 self.pltline_widg.llist['List'] = cur
 
-            # Sincroniza el widget visual
             try:
                 row = self.pltline_widg.lists.index(cur)
                 self.pltline_widg.llist_widget.setCurrentRow(row)
             except Exception:
                 pass
 
-            # Asegura que se plotee
+            # 
             self.pltline_widg.llist['Plot'] = True
 
             # Muy importante: que spec_widg y pltline_widg compartan el MISMO dict
@@ -377,17 +396,35 @@ class XSpecGui(QMainWindow):
         if index < 0 or index >= len(self.spec_list):
             return
 
-        # ensurance consistency
         new_spec = self._ensure_vacuum_angstrom(self.spec_list[index])
 
-        # update the spectrum
+ 
+        try:
+            cur = self.pltline_widg.llist.get('List', None)
+            if (cur is None) or (cur not in self.pltline_widg.lists):
+                if len(self.pltline_widg.lists) > 0:
+                    cur = self.pltline_widg.lists[0]
+                else:
+                    self.pltline_widg.llist = ltgu.set_llist('ISM', in_dict=self.pltline_widg.llist)
+                    cur = self.pltline_widg.llist['List']
+                self.pltline_widg.llist['List'] = cur
+            self.pltline_widg.llist['Plot'] = True
+            # Widget visual
+            try:
+                row = self.pltline_widg.lists.index(cur)
+                self.pltline_widg.llist_widget.setCurrentRow(row)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+
+        self.spec_widg.llist = self.pltline_widg.llist
+
         self.spec_widg.set_spectrum(new_spec)
 
-        # update the line list redshift
         self._sync_line_list_to_spec(new_spec)
-        self._ensure_llist_ready()
 
-        # clear and autoscale
         ax = getattr(self.spec_widg.canvas, 'ax', None)
         if ax is None:
             ax = self.spec_widg.canvas.figure.gca()
@@ -399,7 +436,8 @@ class XSpecGui(QMainWindow):
 
 
     def _sync_line_list_to_spec(self, spec):
-        """ Sync the line list redshift to the spectrum's redshift."""
+        """Sincroniza z del LineList con el del espectro y refresca líneas correctamente."""
+        # 1) Obtiene z del XSpectrum1D (si existe)
         z = None
         try:
             z_attr = getattr(spec, 'z', None)
@@ -415,20 +453,19 @@ class XSpecGui(QMainWindow):
         if z is None or not np.isfinite(z):
             z = 0.0
 
+        # 2) Usa la API del widget (dispara refresco de overlays)
         try:
-            self.pltline_widg.setz(f"{z:.5f}")  
+            self.pltline_widg.setz(f"{z:.5f}")
         except Exception:
+            # fallback
             self.pltline_widg.llist['z'] = z
             try:
                 self.pltline_widg.zbox.setText(f"{z:.5f}")
             except Exception:
                 pass
 
-        try:
-            self.pltline_widg.llist['Plot'] = True
-        except Exception:
-            pass
-
+        # 3) Re‑compartir el MISMO dict por si algún método lo reemplazó
+        self.spec_widg.llist = self.pltline_widg.llist
 
     def _ensure_visible_after_draw(self, event=None):
         try:
