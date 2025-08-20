@@ -88,24 +88,13 @@ class XSpecGui(QMainWindow):
             init_z=zsys, screen_scale=self.scale)
         self.pltline_widg.setMaximumWidth(int(300*self.scale))
 
+        self.pltline_widg.llist = ltgu.set_llist('ISM', in_dict=self.pltline_widg.llist)
+        self.pltline_widg.llist['Plot'] = True
+
+        # Refleja en el widget visual
         try:
-            cur = self.pltline_widg.llist.get('List', None)
-            if (cur is None) or (cur not in self.pltline_widg.lists):
-                if len(self.pltline_widg.lists) > 0:
-                    cur = self.pltline_widg.lists[0]
-                else:
-                    # crea una por defecto
-                    self.pltline_widg.llist = ltgu.set_llist('ISM', in_dict=self.pltline_widg.llist)
-                    cur = self.pltline_widg.llist['List']
-                self.pltline_widg.llist['List'] = cur
-            # Refleja en widget visual
-            try:
-                row = self.pltline_widg.lists.index(cur)
-                self.pltline_widg.llist_widget.setCurrentRow(row)
-            except Exception:
-                pass
-            # Plot ON
-            self.pltline_widg.llist['Plot'] = True
+            idx = self.pltline_widg.lists.index(self.pltline_widg.llist['List'])
+            self.pltline_widg.llist_widget.setCurrentRow(idx)
         except Exception:
             pass
 
@@ -169,6 +158,9 @@ class XSpecGui(QMainWindow):
                                          zsys=zsys, norm=norm, exten=self.exten_list[0],
                                          abs_sys=abs_sys, screen_scale=self.scale,
                                          rsp_kwargs=rsp_kwargs, **kwargs)
+        
+        self.spec_widg.llist = self.pltline_widg.llist
+        
         # Reset redshift from spec
         if zsys is None:
             if hasattr(self.spec_widg.spec, 'z'):
@@ -176,12 +168,14 @@ class XSpecGui(QMainWindow):
         # Auto set line list if spec has proper object type
         if hasattr(self.spec_widg.spec, 'stypes'):
             if self.spec_widg.spec.stypes[self.spec_widg.select].lower() == 'galaxy':
-                self.pltline_widg.llist = ltgu.set_llist('Galaxy',in_dict=self.pltline_widg.llist)
-            elif self.spec_widg.spec.stypes[self.spec_widg.select].lower() == 'absorber':
-                self.pltline_widg.llist = ltgu.set_llist('Strong',in_dict=self.pltline_widg.llist)
-            self.pltline_widg.llist['Plot'] = True
-            idx = self.pltline_widg.lists.index(self.pltline_widg.llist['List'])
-            self.pltline_widg.llist_widget.setCurrentRow(idx)
+                self.pltline_widg.llist = ltgu.set_llist('Galaxy', in_dict=self.pltline_widg.llist)
+        elif self.spec_widg.spec.stypes[self.spec_widg.select].lower() == 'absorber':
+            self.pltline_widg.llist = ltgu.set_llist('Strong', in_dict=self.pltline_widg.llist)
+        self.pltline_widg.llist['Plot'] = True
+        idx = self.pltline_widg.lists.index(self.pltline_widg.llist['List'])
+        self.pltline_widg.llist_widget.setCurrentRow(idx)
+        # <- NUEVO: vuelve a compartir el dict actualizado
+        self.spec_widg.llist = self.pltline_widg.llist
         #
         self.pltline_widg.spec_widg = self.spec_widg
         # Multi spec
@@ -261,13 +255,16 @@ class XSpecGui(QMainWindow):
             wrest = Quantity(float(spltw[0]), unit=self.pltline_widg.llist[
                 self.pltline_widg.llist['List']]._data['wrest'].unit) # spltw[1])  [A bit risky!]
             z = event.xdata/wrest.value - 1.
-            self.pltline_widg.llist['z'] = z
             print("z={:.5f}".format(z))
             self.statusBar().showMessage('z = {:f}'.format(z))
 
-            self.pltline_widg.zbox.setText('{:.5f}'.format(self.pltline_widg.llist['z']))
+            # <- NUEVO: usa la API del widget (refresca líneas correctamente)
+            self.pltline_widg.setz('{:.5f}'.format(z))
 
-            # Draw
+            # Asegura que sigan compartiendo el MISMO dict (por si el widget lo tocó)
+            self.spec_widg.llist = self.pltline_widg.llist
+
+            # Redibuja
             self.spec_widg.on_draw()
 
 
@@ -396,40 +393,28 @@ class XSpecGui(QMainWindow):
         if index < 0 or index >= len(self.spec_list):
             return
 
+        # --- Asegura que la calibración de longitudes de onda esté en vacío ---
         new_spec = self._ensure_vacuum_angstrom(self.spec_list[index])
 
- 
-        try:
-            cur = self.pltline_widg.llist.get('List', None)
-            if (cur is None) or (cur not in self.pltline_widg.lists):
-                if len(self.pltline_widg.lists) > 0:
-                    cur = self.pltline_widg.lists[0]
-                else:
-                    self.pltline_widg.llist = ltgu.set_llist('ISM', in_dict=self.pltline_widg.llist)
-                    cur = self.pltline_widg.llist['List']
-                self.pltline_widg.llist['List'] = cur
-            self.pltline_widg.llist['Plot'] = True
-            # Widget visual
-            try:
-                row = self.pltline_widg.lists.index(cur)
-                self.pltline_widg.llist_widget.setCurrentRow(row)
-            except Exception:
-                pass
-        except Exception:
-            pass
+        # --- (2) Refresca la line list, asegurando que no quede 'None' ---
+        self._ensure_llist_ready()
 
-
+        # --- (3) Comparte el MISMO dict con spec_widg (importantísimo) ---
         self.spec_widg.llist = self.pltline_widg.llist
 
+        # Cambia el espectro
         self.spec_widg.set_spectrum(new_spec)
 
+        # Sincroniza z del espectro con la line list
         self._sync_line_list_to_spec(new_spec)
 
+        # Limpia el eje
         ax = getattr(self.spec_widg.canvas, 'ax', None)
         if ax is None:
             ax = self.spec_widg.canvas.figure.gca()
         ax.clear()
 
+        # Redibuja
         self.spec_widg.on_draw()
         self._autoscale_from_spec(new_spec)
 
