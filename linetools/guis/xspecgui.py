@@ -167,16 +167,19 @@ class XSpecGui(QMainWindow):
                 self.pltline_widg.setz(str(self.spec_widg.spec.z[self.spec_widg.select]))
         # Auto set line list if spec has proper object type
         if hasattr(self.spec_widg.spec, 'stypes'):
-            if self.spec_widg.spec.stypes[self.spec_widg.select].lower() == 'galaxy':
+            st = str(self.spec_widg.spec.stypes[self.spec_widg.select]).lower()
+            if st == 'galaxy':
                 self.pltline_widg.llist = ltgu.set_llist('Galaxy', in_dict=self.pltline_widg.llist)
-        elif self.spec_widg.spec.stypes[self.spec_widg.select].lower() == 'absorber':
-            self.pltline_widg.llist = ltgu.set_llist('Strong', in_dict=self.pltline_widg.llist)
-        self.pltline_widg.llist['Plot'] = True
-        idx = self.pltline_widg.lists.index(self.pltline_widg.llist['List'])
-        self.pltline_widg.llist_widget.setCurrentRow(idx)
-        # <- NUEVO: vuelve a compartir el dict actualizado
-        self.spec_widg.llist = self.pltline_widg.llist
+            elif st == 'absorber':
+                self.pltline_widg.llist = ltgu.set_llist('Strong', in_dict=self.pltline_widg.llist)
+
+            self.pltline_widg.llist['Plot'] = True
+            idx = self.pltline_widg.lists.index(self.pltline_widg.llist['List'])
+            self.pltline_widg.llist_widget.setCurrentRow(idx)
+            # vuelve a compartir el dict actualizado
+            self.spec_widg.llist = self.pltline_widg.llist
         #
+        
         self.pltline_widg.spec_widg = self.spec_widg
         # Multi spec
         self.mspec_widg = ltgsp.MultiSpecWidget(self.spec_widg)
@@ -238,7 +241,7 @@ class XSpecGui(QMainWindow):
             if event.xdata is None:  # Mac bug [I think]
                 return
             if self.pltline_widg.llist['List'] is None:
-                return
+                self._ensure_llist_ready()
             self.select_line_widg = ltgl.SelectLineWidget(
                 self.pltline_widg.llist[self.pltline_widg.llist['List']]._data,
                 scale=self.scale)
@@ -252,21 +255,52 @@ class XSpecGui(QMainWindow):
             #QtCore.pyqtRemoveInputHook()
             #pdb.set_trace()
             #QtCore.pyqtRestoreInputHook()
-            wrest = Quantity(float(spltw[0]), unit=self.pltline_widg.llist[
-            self.pltline_widg.llist['List']]._data['wrest'].unit)
-            z = event.xdata / wrest.value - 1.0
+            self._ensure_llist_ready()
 
+            # Accede de forma segura al objeto de la lista y su unidad
+            ll = self.pltline_widg.llist
+            llist_name = ll.get('List', 'ISM') or 'ISM'
+            # Si por alguna razón no está poblada, repoblarla
+            self.pltline_widg.llist = ltgu.set_llist(llist_name, in_dict=ll)
+            ll = self.pltline_widg.llist  # refresca ref local
+
+            llist_obj = ll[ll['List']]
+            wrest_col = llist_obj._data['wrest']
+            wrest_unit = getattr(wrest_col, 'unit', u.AA)  # fallback a Å si no hay unidad
+
+            # wrest del item seleccionado (en la UI viene como string, tomamos el número)
+            try:
+                wrest_val = float(spltw[0])
+            except Exception:
+                # último recurso: quitar posibles letras/unidades del número
+                wrest_val = float(''.join(ch for ch in spltw[0] if (ch.isdigit() or ch in '.-+eE')))
+
+            # Normaliza a Å
+            wrest = Quantity(wrest_val, wrest_unit).to(u.AA)
+
+            # xdata debe ser finito
+            if (event.xdata is None) or (not np.isfinite(event.xdata)):
+                return
+
+            # Calcula z
+            z = event.xdata / wrest.value - 1.0
             print("z={:.5f}".format(z))
             self.statusBar().showMessage('z = {:f}'.format(z))
 
-            # ✅ Usa la API del widget (refresca correctamente las líneas)
+            # Usa la API oficial (refresca overlays y widgets internos)
             self.pltline_widg.setz('{:.5f}'.format(z))
 
-            # ✅ Asegura que ambos sigan compartiendo el MISMO dict
+            # Asegura que ambos sigan compartiendo el MISMO dict
             self.spec_widg.llist = self.pltline_widg.llist
 
-            # ✅ Redibuja una sola vez
-            self.spec_widg.on_draw()
+            # Redibuja de forma segura (reintenta si la lista quedó momentáneamente inconsistente)
+            try:
+                self.spec_widg.on_draw()
+            except KeyError:
+                # p.ej. llist['List'] fue None por un instante → recupera y reintenta
+                self._ensure_llist_ready()
+                self.spec_widg.llist = self.pltline_widg.llist
+                self.spec_widg.on_draw()
 
 
     def _finite_vals(self, q):
@@ -360,25 +394,20 @@ class XSpecGui(QMainWindow):
     def _ensure_llist_ready(self):
         """ Ensure the line list is set and ready to plot"""
         try:
-            # if llist is None, set to default
-            cur = self.pltline_widg.llist.get('List', None)
-            if (cur is None) or (cur not in self.pltline_widg.lists):
-                if len(self.pltline_widg.lists) > 0:
-                    cur = self.pltline_widg.lists[0]
-                else:
-                    return  # no line lists available
-                self.pltline_widg.llist['List'] = cur
+            # Nombre actual o ISM por defecto
+            cur = self.pltline_widg.llist.get('List', 'ISM') or 'ISM'
+            # Repoblar el dict (esto garantiza la clave self.pltline_widg.llist[cur] con el objeto LineList)
+            self.pltline_widg.llist = ltgu.set_llist(cur, in_dict=self.pltline_widg.llist)
 
+            # Sincroniza selección visual
             try:
-                row = self.pltline_widg.lists.index(cur)
+                row = self.pltline_widg.lists.index(self.pltline_widg.llist['List'])
                 self.pltline_widg.llist_widget.setCurrentRow(row)
             except Exception:
                 pass
 
-            # 
+            # Plot ON y comparte el MISMO dict con spec_widg
             self.pltline_widg.llist['Plot'] = True
-
-            # Muy importante: que spec_widg y pltline_widg compartan el MISMO dict
             self.spec_widg.llist = self.pltline_widg.llist
         except Exception:
             pass
