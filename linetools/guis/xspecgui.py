@@ -302,20 +302,38 @@ class XSpecGui(QMainWindow):
 
         new_spec = self.spec_list[index]
 
-        # 1) Cambiar el espectro (esto ya limpia/redibuja internamente)
+        # 1) Cambiar el espectro
         self.spec_widg.set_spectrum(new_spec)
 
-        # 2) Re-enlazar widgets (para que las líneas se peguen al eje ACTUAL)
+        # 2) Re-enlazar widgets (líneas deben pegarse al eje actual)
         self.pltline_widg.spec_widg = self.spec_widg
 
-        # 3) Autoescala al nuevo rango y dibuja
-        self._autoscale_from_spec(new_spec)
+        # 3) Dibujo inicial: algunos ExamineSpecWidget resetean xlim/ylim aquí
+        self.spec_widg.on_draw()
 
-        # 4) MUY IMPORTANTE: re-sincronizar la MISMA llist entre widgets
+        # 4) AHORA forzamos límites al rango del NUEVO espectro
+        ax = getattr(self.spec_widg.canvas, 'ax', None)
+        if ax is None:
+            ax = self.spec_widg.canvas.figure.gca()
+
+        w = np.asarray(new_spec.wavelength.value, dtype=float)
+        f = np.asarray(new_spec.flux.value, dtype=float)
+        w = w[np.isfinite(w)]
+        f = f[np.isfinite(f)]
+        if w.size and f.size:
+            x1, x2 = np.nanpercentile(w, [1, 99])
+            y1, y2 = np.nanpercentile(f, [1, 99])
+            xr = max(x2 - x1, 1.0)
+            yr = max(y2 - y1, 1.0)
+            ax.set_xlim(x1 - 0.02 * xr, x2 + 0.02 * xr)
+            ax.set_ylim(y1 - 0.05 * yr, y2 + 0.05 * yr)
+
+        # 5) Re-sincronizar la MISMA llist entre widgets y respetar 'Plot'
         self._sync_llist(keep_plot=True)
 
-        # 5) Redibujo final (espectro + líneas si estaban activas)
-        self.spec_widg.on_draw()
+        # 6) Redibujo final
+        self.spec_widg.canvas.draw_idle()
+
 
 def main(args, **kwargs):
     from qtpy.QtWidgets import QApplication
