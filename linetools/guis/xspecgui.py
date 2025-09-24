@@ -137,7 +137,7 @@ class XSpecGui(QMainWindow):
         self.pltline_widg.spec_widg = self.spec_widg
 
         self.pltline_widg.llist_widget.currentRowChanged.connect(
-        lambda *_: self._fix_limits_current_spec()
+        lambda *_: (self._ensure_valid_llist(), self._fix_limits_current_spec(), self.spec_widg.on_draw())
         )
 
         # Multi spec
@@ -403,6 +403,36 @@ class XSpecGui(QMainWindow):
         # Forzar límites/ventana al espectro activo (esto queda al FINAL)
         self._fix_limits_current_spec()
 
+        try:
+            row = self.pltline_widg.llist_widget.currentRow()
+            name = self.pltline_widg.lists[row] if (row is not None and row >= 0) else 'Galaxy'
+        except Exception:
+            name = 'Galaxy'
+
+        # refresca IN-PLACE el MISMO dict llist y asegura que va a pintar
+        ltgu.set_llist(name, in_dict=self.pltline_widg.llist)
+        self.pltline_widg.llist['Plot'] = True
+
+        # z del nuevo espectro (si existe) o 0.0
+        zval = 0.0
+        if hasattr(new_spec, 'z'):
+            try:
+                zval = float(new_spec.z[getattr(self.spec_widg, 'select', 0)])
+            except Exception:
+                try:
+                    zval = float(new_spec.z)
+                except Exception:
+                    zval = 0.0
+        self.pltline_widg.llist['z'] = zval
+        self.pltline_widg.setz('{:.6f}'.format(zval))
+
+        # comparte la MISMA referencia de llist con el widget del espectro
+        self.spec_widg.llist = self.pltline_widg.llist
+        self.pltline_widg.spec_widg = self.spec_widg
+
+        # redibuja ahora sí con la lista y z del espectro activo
+        self.spec_widg.on_draw()
+        self.spec_widg.canvas.draw_idle()
 
 
 def main(args, **kwargs):
