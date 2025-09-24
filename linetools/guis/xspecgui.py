@@ -296,48 +296,44 @@ class XSpecGui(QMainWindow):
 
     def _ensure_valid_llist(self):
         """
-        Garantiza que self.pltline_widg.llist tenga un 'List' válido cuando
-        se va a dibujar, y que ambos widgets compartan la MISMA referencia.
-        Evita KeyError cuando 'List' es None.
+        Asegura que llist tenga un nombre de lista válido y sincroniza referencias
+        entre PlotLinesWidget y ExamineSpecWidget para evitar KeyError.
         """
-        ll = self.pltline_widg.llist  # misma referencia
-        # ¿qué lista está seleccionada en el listwidget?
+        ll = self.pltline_widg.llist  # MISMA referencia
+        # nombre seleccionado en el panel
         sel_name = None
         try:
             row = self.pltline_widg.llist_widget.currentRow()
-            if row is not None and row >= 0 and row < len(self.pltline_widg.lists):
-                sel_name = self.pltline_widg.lists[row]  # p.ej. "Galaxy", "None", etc.
+            if row is not None and 0 <= row < len(self.pltline_widg.lists):
+                sel_name = self.pltline_widg.lists[row]
         except Exception:
             pass
 
-        # nombre actual almacenado en llist
         curr = ll.get('List', None)
 
-        # Caso usuario eligió "None" en el panel → no pintamos líneas
+        # Si el usuario eligió "None", no pintamos líneas
         if sel_name == 'None':
             ll['Plot'] = False
-            # para evitar KeyError dentro de on_draw, fija igualmente un nombre válido
-            # (no importa cuál, no se usará porque Plot=False)
+            # Evita KeyError dentro de on_draw fijando un nombre “dummy”
             if curr is None:
                 ltgu.set_llist('Galaxy', in_dict=ll)
-            # sincroniza refs
+            # Sincroniza referencias
             self.spec_widg.llist = ll
             self.pltline_widg.spec_widg = self.spec_widg
             return
 
-        # Si vamos a pintar líneas (Plot True) aseguremos nombre válido
-        if ll.get('Plot', False):
+        # Si vamos a pintar, aseguremos nombre válido
+        if ll.get('Plot', True):  # por defecto, pinta
             name = sel_name or curr or 'Galaxy'
-            # refresca IN-PLACE el mismo dict
-            ltgu.set_llist(name, in_dict=ll)
+            ltgu.set_llist(name, in_dict=ll)  # **in-place**, sin crear dict nuevo
         else:
-            # Plot=False pero evita 'List'==None para que on_draw no falle
             if curr is None:
                 ltgu.set_llist('Galaxy', in_dict=ll)
 
-        # sincroniza referencias ENTRE widgets
+        # Sincroniza referencias entre widgets
         self.spec_widg.llist = ll
         self.pltline_widg.spec_widg = self.spec_widg
+
 
     def change_spectrum(self, index):
         """Switch spectrum shown in the main plot"""
@@ -346,20 +342,22 @@ class XSpecGui(QMainWindow):
 
         new_spec = self.spec_list[index]
 
-        # 1) Cambiar espectro
-        self.spec_widg.set_spectrum(new_spec)
-
-        # 2) Asegurar que llist sea válida ANTES de cualquier draw (evita KeyError)
-        self._ensure_valid_llist()
-
-        # 3) Primer draw (algunos widgets setean defaults aquí)
-        self.spec_widg.on_draw()
-
-        # 4) Forzar límites al rango del NUEVO espectro
+        # --- (A) Limpiar el eje ANTES de cambiar, para evitar “fantasmas”
         ax = getattr(self.spec_widg.canvas, 'ax', None)
         if ax is None:
             ax = self.spec_widg.canvas.figure.gca()
+        ax.cla()
 
+        # --- (B) Cambiar el espectro
+        self.spec_widg.set_spectrum(new_spec)
+
+        # --- (C) Asegurar llist válida y referencias (evita KeyError)
+        self._ensure_valid_llist()
+
+        # --- (D) Primer draw para que el widget cree sus artistas
+        self.spec_widg.on_draw()
+
+        # --- (E) Ajustar límites al NUEVO espectro
         w = np.asarray(new_spec.wavelength.value, dtype=float)
         f = np.asarray(new_spec.flux.value, dtype=float)
         w = w[np.isfinite(w)]
@@ -373,17 +371,19 @@ class XSpecGui(QMainWindow):
             ax.set_xlim(x1 - 0.02 * xr, x2 + 0.02 * xr)
             ax.set_ylim(y1 - 0.05 * yr, y2 + 0.05 * yr)
 
-            # 5) Sincroniza también la ventana interna del widget (clave para MUSE)
-            for attr in ('xlim', 'wvlim', 'wvmnx'):
+            # --- (F) **CLAVE**: sincronizar la ventana interna del widget
+            # (distintas versiones usan distintos nombres; probamos todos)
+            new_xlim = ax.get_xlim()
+            for attr in ('xlim', 'wvlim', 'wvmnx', 'wlim', 'x_mnx'):
                 try:
-                    setattr(self.spec_widg, attr, ax.get_xlim())
+                    setattr(self.spec_widg, attr, new_xlim)
                 except Exception:
                     pass
 
-        # 6) Validar/re-sincronizar llist otra vez por si el panel cambió
+        # --- (G) Revalidar llist por si el panel cambió con el click
         self._ensure_valid_llist()
 
-        # 7) Redibujo final
+        # --- (H) Redibujo final (espectro + líneas si Plot=True)
         self.spec_widg.on_draw()
         self.spec_widg.canvas.draw_idle()
 
