@@ -302,16 +302,14 @@ class XSpecGui(QMainWindow):
 
         new_spec = self.spec_list[index]
 
-        # 1) Cambiar el espectro
+        # 1) Cambiar espectro y re-enlazar widgets
         self.spec_widg.set_spectrum(new_spec)
-
-        # 2) Re-enlazar widgets (líneas deben pegarse al eje actual)
         self.pltline_widg.spec_widg = self.spec_widg
 
-        # 3) Dibujo inicial: algunos ExamineSpecWidget resetean xlim/ylim aquí
+        # 2) Primer draw (algunos widgets setean defaults aquí)
         self.spec_widg.on_draw()
 
-        # 4) AHORA forzamos límites al rango del NUEVO espectro
+        # 3) Calcular límites del NUEVO espectro
         ax = getattr(self.spec_widg.canvas, 'ax', None)
         if ax is None:
             ax = self.spec_widg.canvas.figure.gca()
@@ -320,6 +318,7 @@ class XSpecGui(QMainWindow):
         f = np.asarray(new_spec.flux.value, dtype=float)
         w = w[np.isfinite(w)]
         f = f[np.isfinite(f)]
+
         if w.size and f.size:
             x1, x2 = np.nanpercentile(w, [1, 99])
             y1, y2 = np.nanpercentile(f, [1, 99])
@@ -328,10 +327,26 @@ class XSpecGui(QMainWindow):
             ax.set_xlim(x1 - 0.02 * xr, x2 + 0.02 * xr)
             ax.set_ylim(y1 - 0.05 * yr, y2 + 0.05 * yr)
 
-        # 5) Re-sincronizar la MISMA llist entre widgets y respetar 'Plot'
+            # >>> CLAVE: sincronizar la ventana interna del widget <<<
+            # (algunas versiones usan 'xlim', otras 'wvlim' o 'wvmnx')
+            try:
+                self.spec_widg.xlim = ax.get_xlim()
+            except Exception:
+                pass
+            try:
+                self.spec_widg.wvlim = ax.get_xlim()
+            except Exception:
+                pass
+            try:
+                self.spec_widg.wvmnx = ax.get_xlim()
+            except Exception:
+                pass
+
+        # 4) Re-sincronizar la MISMA llist entre widgets
         self._sync_llist(keep_plot=True)
 
-        # 6) Redibujo final
+        # 5) Redibujar ya con límites y ventana interna actualizados
+        self.spec_widg.on_draw()
         self.spec_widg.canvas.draw_idle()
 
 
