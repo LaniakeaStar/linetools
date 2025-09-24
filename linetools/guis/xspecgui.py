@@ -274,12 +274,38 @@ class XSpecGui(QMainWindow):
 
         new_spec = self.spec_list[index]
 
-        # update spec_widg
+        # --- 1) save the current line list
+        curr_llist = dict(self.pltline_widg.llist)
+
+        # --- 2) updae the spectrum in spec_widg
+        # Clear the current axes to avoid overplot issues
+        ax = getattr(self.spec_widg.canvas, 'ax', None)
+        if ax is None:
+            ax = self.spec_widg.canvas.figure.gca()
+        ax.cla()
+
         self.spec_widg.set_spectrum(new_spec)
 
-        self.spec_widg.on_draw()
+        # --- 3) Re-hook the spec widget to Plot Line
+        self.pltline_widg.spec_widg = self.spec_widg
 
+        # --- 4) Redraw the spectrum and autoscale
+        self.spec_widg.on_draw()
         self._autoscale_from_spec(new_spec)
+
+        # --- 5) Restore the line list
+        self.pltline_widg.llist = curr_llist
+        if self.pltline_widg.llist.get('Plot', False) and self.pltline_widg.llist.get('List') is not None:
+            if hasattr(new_spec, 'z'):
+                try:
+                    self.pltline_widg.setz(str(new_spec.z[getattr(self.spec_widg, 'select', 0)]))
+                except Exception:
+                    pass
+            else:
+                zval = float(self.pltline_widg.llist.get('z', 0.0))
+                self.pltline_widg.zbox.setText('{:.6f}'.format(zval))
+
+            self.spec_widg.on_draw()
 
 def main(args, **kwargs):
     from qtpy.QtWidgets import QApplication
