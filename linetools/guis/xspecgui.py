@@ -136,9 +136,7 @@ class XSpecGui(QMainWindow):
         #
         self.pltline_widg.spec_widg = self.spec_widg
 
-        self.pltline_widg.llist_widget.currentRowChanged.connect(
-        lambda *_: (self._ensure_valid_llist(), self._fix_limits_current_spec(), self.spec_widg.on_draw())
-        )
+        self.pltline_widg.llist_widget.currentRowChanged.connect(self._on_llist_changed)
 
         # Multi spec
         self.mspec_widg = ltgsp.MultiSpecWidget(self.spec_widg)
@@ -376,7 +374,34 @@ class XSpecGui(QMainWindow):
 
         self.spec_widg.canvas.draw_idle()
 
+    def _on_llist_changed(self, *_):
+        """
+        Cambiar la line list desde el panel, evitando 'List'==None cuando redibujamos.
+        """
+        ll = self.pltline_widg.llist
+        try:
+            row = self.pltline_widg.llist_widget.currentRow()
+            name = self.pltline_widg.lists[row] if (row is not None and row >= 0) else 'Galaxy'
+        except Exception:
+            name = 'Galaxy'
 
+        if name == 'None':
+            # No dibujar líneas, pero deja un nombre “dummy” válido para evitar KeyError
+            ll['Plot'] = False
+            if ll.get('List') is None:
+                ltgu.set_llist('Galaxy', in_dict=ll)   # in-place, MISMA ref
+        else:
+            # Actualiza la lista seleccionada y sí dibuja
+            ltgu.set_llist(name, in_dict=ll)           # in-place, MISMA ref
+            ll['Plot'] = True
+
+        # Compartir la MISMA referencia entre widgets
+        self.spec_widg.llist = ll
+        self.pltline_widg.spec_widg = self.spec_widg
+
+        # Redibujar y reimponer límites del espectro activo
+        self.spec_widg.on_draw()
+        self._fix_limits_current_spec()
 
     def change_spectrum(self, index):
         """Switch spectrum shown in the main plot"""
@@ -409,28 +434,32 @@ class XSpecGui(QMainWindow):
         except Exception:
             name = 'Galaxy'
 
-        # refresca IN-PLACE el MISMO dict llist y asegura que va a pintar
-        ltgu.set_llist(name, in_dict=self.pltline_widg.llist)
-        self.pltline_widg.llist['Plot'] = True
+        ll = self.pltline_widg.llist
+        if name == 'None':
+            ll['Plot'] = False
+            if ll.get('List') is None:
+                ltgu.set_llist('Galaxy', in_dict=ll)   # evita 'List'==None
+            # En “None” NO llames setz() (haría on_draw y crashearía si ‘List’ vuelve a None)
+        else:
+            ltgu.set_llist(name, in_dict=ll)
+            ll['Plot'] = True
 
-        # z del nuevo espectro (si existe) o 0.0
-        zval = 0.0
-        if hasattr(new_spec, 'z'):
-            try:
-                zval = float(new_spec.z[getattr(self.spec_widg, 'select', 0)])
-            except Exception:
+            # z del nuevo espectro (si existe) o 0.0
+            zval = 0.0
+            if hasattr(new_spec, 'z'):
                 try:
-                    zval = float(new_spec.z)
+                    zval = float(new_spec.z[getattr(self.spec_widg, 'select', 0)])
                 except Exception:
-                    zval = 0.0
-        self.pltline_widg.llist['z'] = zval
-        self.pltline_widg.setz('{:.6f}'.format(zval))
+                    try:
+                        zval = float(new_spec.z)
+                    except Exception:
+                        zval = 0.0
+            ll['z'] = zval
+            self.pltline_widg.setz('{:.6f}'.format(zval))  # seguro: ya hay 'List' válido
 
-        # comparte la MISMA referencia de llist con el widget del espectro
-        self.spec_widg.llist = self.pltline_widg.llist
+        # Compartir referencia y redibujar
+        self.spec_widg.llist = ll
         self.pltline_widg.spec_widg = self.spec_widg
-
-        # redibuja ahora sí con la lista y z del espectro activo
         self.spec_widg.on_draw()
         self.spec_widg.canvas.draw_idle()
 
