@@ -267,6 +267,34 @@ class XSpecGui(QMainWindow):
     def quit(self):
         self.close()
 
+    def _sync_llist(self, keep_plot=True):
+        """
+        Ensure both widgets share the same llist dict
+        """
+        # nombre de lista actual y z
+        sel = self.pltline_widg.llist.get('List', None)
+        zval = self.pltline_widg.llist.get('z', 0.0)
+
+        if sel is not None:
+            # IMPORTANTÍSIMO: no reemplazar el dict; refrescar su contenido in-place
+            # usando set_llist pero sobre el MISMO in_dict
+            ltgu.set_llist(sel, in_dict=self.pltline_widg.llist)  # actualiza claves del MISMO objeto
+            self.pltline_widg.llist['z'] = zval
+            if keep_plot:
+                self.pltline_widg.llist['Plot'] = True
+
+            # aseguramos que ambos widgets compartan EXACTAMENTE el mismo objeto
+            self.spec_widg.llist = self.pltline_widg.llist
+            self.pltline_widg.spec_widg = self.spec_widg
+
+            # reflejar selección visual en el listwidget (por si acaso)
+            try:
+                idx = self.pltline_widg.lists.index(sel)
+                self.pltline_widg.llist_widget.setCurrentRow(idx)
+            except Exception:
+                pass
+
+
     def change_spectrum(self, index):
         """Switch spectrum shown in the main plot"""
         if index < 0 or index >= len(self.spec_list):
@@ -274,38 +302,20 @@ class XSpecGui(QMainWindow):
 
         new_spec = self.spec_list[index]
 
-        # --- 1) save the current line list
-        curr_llist = dict(self.pltline_widg.llist)
-
-        # --- 2) updae the spectrum in spec_widg
-        # Clear the current axes to avoid overplot issues
-        ax = getattr(self.spec_widg.canvas, 'ax', None)
-        if ax is None:
-            ax = self.spec_widg.canvas.figure.gca()
-        ax.cla()
-
+        # 1) Cambiar el espectro (esto ya limpia/redibuja internamente)
         self.spec_widg.set_spectrum(new_spec)
 
-        # --- 3) Re-hook the spec widget to Plot Line
+        # 2) Re-enlazar widgets (para que las líneas se peguen al eje ACTUAL)
         self.pltline_widg.spec_widg = self.spec_widg
 
-        # --- 4) Redraw the spectrum and autoscale
-        self.spec_widg.on_draw()
+        # 3) Autoescala al nuevo rango y dibuja
         self._autoscale_from_spec(new_spec)
 
-        # --- 5) Restore the line list
-        self.pltline_widg.llist = curr_llist
-        if self.pltline_widg.llist.get('Plot', False) and self.pltline_widg.llist.get('List') is not None:
-            if hasattr(new_spec, 'z'):
-                try:
-                    self.pltline_widg.setz(str(new_spec.z[getattr(self.spec_widg, 'select', 0)]))
-                except Exception:
-                    pass
-            else:
-                zval = float(self.pltline_widg.llist.get('z', 0.0))
-                self.pltline_widg.zbox.setText('{:.6f}'.format(zval))
+        # 4) MUY IMPORTANTE: re-sincronizar la MISMA llist entre widgets
+        self._sync_llist(keep_plot=True)
 
-            self.spec_widg.on_draw()
+        # 5) Redibujo final (espectro + líneas si estaban activas)
+        self.spec_widg.on_draw()
 
 def main(args, **kwargs):
     from qtpy.QtWidgets import QApplication
