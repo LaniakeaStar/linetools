@@ -294,6 +294,50 @@ class XSpecGui(QMainWindow):
             except Exception:
                 pass
 
+    def _ensure_valid_llist(self):
+        """
+        Garantiza que self.pltline_widg.llist tenga un 'List' válido cuando
+        se va a dibujar, y que ambos widgets compartan la MISMA referencia.
+        Evita KeyError cuando 'List' es None.
+        """
+        ll = self.pltline_widg.llist  # misma referencia
+        # ¿qué lista está seleccionada en el listwidget?
+        sel_name = None
+        try:
+            row = self.pltline_widg.llist_widget.currentRow()
+            if row is not None and row >= 0 and row < len(self.pltline_widg.lists):
+                sel_name = self.pltline_widg.lists[row]  # p.ej. "Galaxy", "None", etc.
+        except Exception:
+            pass
+
+        # nombre actual almacenado en llist
+        curr = ll.get('List', None)
+
+        # Caso usuario eligió "None" en el panel → no pintamos líneas
+        if sel_name == 'None':
+            ll['Plot'] = False
+            # para evitar KeyError dentro de on_draw, fija igualmente un nombre válido
+            # (no importa cuál, no se usará porque Plot=False)
+            if curr is None:
+                ltgu.set_llist('Galaxy', in_dict=ll)
+            # sincroniza refs
+            self.spec_widg.llist = ll
+            self.pltline_widg.spec_widg = self.spec_widg
+            return
+
+        # Si vamos a pintar líneas (Plot True) aseguremos nombre válido
+        if ll.get('Plot', False):
+            name = sel_name or curr or 'Galaxy'
+            # refresca IN-PLACE el mismo dict
+            ltgu.set_llist(name, in_dict=ll)
+        else:
+            # Plot=False pero evita 'List'==None para que on_draw no falle
+            if curr is None:
+                ltgu.set_llist('Galaxy', in_dict=ll)
+
+        # sincroniza referencias ENTRE widgets
+        self.spec_widg.llist = ll
+        self.pltline_widg.spec_widg = self.spec_widg
 
     def change_spectrum(self, index):
         """Switch spectrum shown in the main plot"""
@@ -302,14 +346,16 @@ class XSpecGui(QMainWindow):
 
         new_spec = self.spec_list[index]
 
-        # 1) Cambiar espectro y re-enlazar widgets
+        # 1) Cambiar espectro
         self.spec_widg.set_spectrum(new_spec)
-        self.pltline_widg.spec_widg = self.spec_widg
 
-        # 2) Primer draw (algunos widgets setean defaults aquí)
+        # 2) Asegurar que llist sea válida ANTES de cualquier draw (evita KeyError)
+        self._ensure_valid_llist()
+
+        # 3) Primer draw (algunos widgets setean defaults aquí)
         self.spec_widg.on_draw()
 
-        # 3) Calcular límites del NUEVO espectro
+        # 4) Forzar límites al rango del NUEVO espectro
         ax = getattr(self.spec_widg.canvas, 'ax', None)
         if ax is None:
             ax = self.spec_widg.canvas.figure.gca()
@@ -327,27 +373,20 @@ class XSpecGui(QMainWindow):
             ax.set_xlim(x1 - 0.02 * xr, x2 + 0.02 * xr)
             ax.set_ylim(y1 - 0.05 * yr, y2 + 0.05 * yr)
 
-            # >>> CLAVE: sincronizar la ventana interna del widget <<<
-            # (algunas versiones usan 'xlim', otras 'wvlim' o 'wvmnx')
-            try:
-                self.spec_widg.xlim = ax.get_xlim()
-            except Exception:
-                pass
-            try:
-                self.spec_widg.wvlim = ax.get_xlim()
-            except Exception:
-                pass
-            try:
-                self.spec_widg.wvmnx = ax.get_xlim()
-            except Exception:
-                pass
+            # 5) Sincroniza también la ventana interna del widget (clave para MUSE)
+            for attr in ('xlim', 'wvlim', 'wvmnx'):
+                try:
+                    setattr(self.spec_widg, attr, ax.get_xlim())
+                except Exception:
+                    pass
 
-        # 4) Re-sincronizar la MISMA llist entre widgets
-        self._sync_llist(keep_plot=True)
+        # 6) Validar/re-sincronizar llist otra vez por si el panel cambió
+        self._ensure_valid_llist()
 
-        # 5) Redibujar ya con límites y ventana interna actualizados
+        # 7) Redibujo final
         self.spec_widg.on_draw()
         self.spec_widg.canvas.draw_idle()
+
 
 
 def main(args, **kwargs):
