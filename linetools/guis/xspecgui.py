@@ -135,6 +135,11 @@ class XSpecGui(QMainWindow):
             self.pltline_widg.llist_widget.setCurrentRow(idx)
         #
         self.pltline_widg.spec_widg = self.spec_widg
+
+        self.pltline_widg.llist_widget.currentRowChanged.connect(
+        lambda *_: self._fix_limits_current_spec()
+        )
+
         # Multi spec
         self.mspec_widg = ltgsp.MultiSpecWidget(self.spec_widg)
         #self.mspec_widg.clear()
@@ -334,6 +339,44 @@ class XSpecGui(QMainWindow):
         self.spec_widg.llist = ll
         self.pltline_widg.spec_widg = self.spec_widg
 
+        
+
+    def _fix_limits_current_spec(self):
+        """Fija xlim/ylim al espectro actualmente cargado y sincroniza ventana interna."""
+        ax = getattr(self.spec_widg.canvas, 'ax', None)
+        if ax is None:
+            ax = self.spec_widg.canvas.figure.gca()
+
+        spec = self.spec_widg.spec
+        try:
+            w = np.asarray(spec.wavelength.value, dtype=float)
+            f = np.asarray(spec.flux.value, dtype=float)
+        except Exception:
+            return
+
+        w = w[np.isfinite(w)]
+        f = f[np.isfinite(f)]
+        if w.size == 0 or f.size == 0:
+            return
+
+        x1, x2 = np.nanpercentile(w, [1, 99])
+        y1, y2 = np.nanpercentile(f, [1, 99])
+        xr = max(x2 - x1, 1.0)
+        yr = max(y2 - y1, 1.0)
+        ax.set_xlim(x1 - 0.02 * xr, x2 + 0.02 * xr)
+        ax.set_ylim(y1 - 0.05 * yr, y2 + 0.05 * yr)
+
+        new_xlim = ax.get_xlim()
+        # sincroniza posibles nombres de “ventana” usados por tu versión
+        for attr in ('xlim', 'wvlim', 'wvmnx', 'wlim', 'x_mnx'):
+            try:
+                setattr(self.spec_widg, attr, new_xlim)
+            except Exception:
+                pass
+
+        self.spec_widg.canvas.draw_idle()
+
+
 
     def change_spectrum(self, index):
         """Switch spectrum shown in the main plot"""
@@ -342,50 +385,23 @@ class XSpecGui(QMainWindow):
 
         new_spec = self.spec_list[index]
 
-        # --- (A) Limpiar el eje ANTES de cambiar, para evitar “fantasmas”
+        # Limpiar eje para evitar artistas “fantasma”
         ax = getattr(self.spec_widg.canvas, 'ax', None)
         if ax is None:
             ax = self.spec_widg.canvas.figure.gca()
         ax.cla()
 
-        # --- (B) Cambiar el espectro
+        # Cambiar espectro
         self.spec_widg.set_spectrum(new_spec)
 
-        # --- (C) Asegurar llist válida y referencias (evita KeyError)
+        # Asegurar llist válida y referencias compartidas
         self._ensure_valid_llist()
 
-        # --- (D) Primer draw para que el widget cree sus artistas
+        # Un SOLO draw para que el widget cree artistas internos
         self.spec_widg.on_draw()
 
-        # --- (E) Ajustar límites al NUEVO espectro
-        w = np.asarray(new_spec.wavelength.value, dtype=float)
-        f = np.asarray(new_spec.flux.value, dtype=float)
-        w = w[np.isfinite(w)]
-        f = f[np.isfinite(f)]
-
-        if w.size and f.size:
-            x1, x2 = np.nanpercentile(w, [1, 99])
-            y1, y2 = np.nanpercentile(f, [1, 99])
-            xr = max(x2 - x1, 1.0)
-            yr = max(y2 - y1, 1.0)
-            ax.set_xlim(x1 - 0.02 * xr, x2 + 0.02 * xr)
-            ax.set_ylim(y1 - 0.05 * yr, y2 + 0.05 * yr)
-
-            # --- (F) **CLAVE**: sincronizar la ventana interna del widget
-            # (distintas versiones usan distintos nombres; probamos todos)
-            new_xlim = ax.get_xlim()
-            for attr in ('xlim', 'wvlim', 'wvmnx', 'wlim', 'x_mnx'):
-                try:
-                    setattr(self.spec_widg, attr, new_xlim)
-                except Exception:
-                    pass
-
-        # --- (G) Revalidar llist por si el panel cambió con el click
-        self._ensure_valid_llist()
-
-        # --- (H) Redibujo final (espectro + líneas si Plot=True)
-        self.spec_widg.on_draw()
-        self.spec_widg.canvas.draw_idle()
+        # Forzar límites/ventana al espectro activo (esto queda al FINAL)
+        self._fix_limits_current_spec()
 
 
 
