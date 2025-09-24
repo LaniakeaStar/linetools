@@ -144,6 +144,8 @@ class XSpecGui(QMainWindow):
         #for f in self.ispec_list:
         #    self.mspec_widg.addItem(str(f))
         #self.mspec_widg.currentRowChanged.connect(self.change_spectrum)
+        self.current_spec_index = 0  # keep track of current spectrum index
+        self._per_spec_z = {}
         self.spec_selector = QListWidget()
         self.spec_selector.addItems([str(f) for f in self.ispec_list])
         self.spec_selector.currentRowChanged.connect(self.change_spectrum)
@@ -203,11 +205,10 @@ class XSpecGui(QMainWindow):
                 self.pltline_widg.llist['List']]._data['wrest'].unit) # spltw[1])  [A bit risky!]
             z = event.xdata/wrest.value - 1.
             self.pltline_widg.llist['z'] = z
-            print("z={:.5f}".format(z))
-            self.statusBar().showMessage('z = {:f}'.format(z))
-            self.pltline_widg.zbox.setText('{:.5f}'.format(self.pltline_widg.llist['z']))
+            self._per_spec_z[self._current_spec_index] = z     
+            self.pltline_widg.zbox.setText('{:.5f}'.format(z))  
 
-            # Draw
+            # redraw
             self.spec_widg.on_draw()
 
 # New
@@ -386,20 +387,17 @@ class XSpecGui(QMainWindow):
             name = 'Galaxy'
 
         if name == 'None':
-            # No dibujar líneas, pero deja un nombre “dummy” válido para evitar KeyError
             ll['Plot'] = False
             if ll.get('List') is None:
-                ltgu.set_llist('Galaxy', in_dict=ll)   # in-place, MISMA ref
+                ltgu.set_llist('Galaxy', in_dict=ll)
         else:
-            # Actualiza la lista seleccionada y sí dibuja
-            ltgu.set_llist(name, in_dict=ll)           # in-place, MISMA ref
+            ltgu.set_llist(name, in_dict=ll)
             ll['Plot'] = True
 
-        # Compartir la MISMA referencia entre widgets
         self.spec_widg.llist = ll
         self.pltline_widg.spec_widg = self.spec_widg
 
-        # Redibujar y reimponer límites del espectro activo
+        # Redibuja y reimpone límites del espectro ACTUAL
         self.spec_widg.on_draw()
         self._fix_limits_current_spec()
 
@@ -408,6 +406,7 @@ class XSpecGui(QMainWindow):
         if index < 0 or index >= len(self.spec_list):
             return
 
+        self._current_spec_index = index
         new_spec = self.spec_list[index]
 
         # Limpiar eje para evitar artistas “fantasma”
@@ -419,32 +418,30 @@ class XSpecGui(QMainWindow):
         # Cambiar espectro
         self.spec_widg.set_spectrum(new_spec)
 
-        # Asegurar llist válida y referencias compartidas
-        self._ensure_valid_llist()
-
-        # Un SOLO draw para que el widget cree artistas internos
-        self.spec_widg.on_draw()
-
-        # Forzar límites/ventana al espectro activo (esto queda al FINAL)
+        # Fijar límites/ventana al NUEVO espectro (antes de dibujar)
         self._fix_limits_current_spec()
 
+        # Asegurar que la line list activa sea válida y compartida
+        # (no crea dict nuevo; actualiza in-place y comparte ref)
+        ll = self.pltline_widg.llist
         try:
             row = self.pltline_widg.llist_widget.currentRow()
             name = self.pltline_widg.lists[row] if (row is not None and row >= 0) else 'Galaxy'
         except Exception:
             name = 'Galaxy'
 
-        ll = self.pltline_widg.llist
         if name == 'None':
             ll['Plot'] = False
             if ll.get('List') is None:
-                ltgu.set_llist('Galaxy', in_dict=ll)   # evita 'List'==None
-            # En “None” NO llames setz() (haría on_draw y crashearía si ‘List’ vuelve a None)
+                ltgu.set_llist('Galaxy', in_dict=ll)  # evita KeyError aunque no se pinte
         else:
             ltgu.set_llist(name, in_dict=ll)
             ll['Plot'] = True
 
-            # z del nuevo espectro (si existe) o 0.0
+        # z del NUEVO espectro: usa el recordado para este índice, si existe;
+        # si el XSpectrum trae .z lo respetamos como fallback; si no, 0.0
+        zval = self._per_spec_z.get(index, None)
+        if zval is None:
             zval = 0.0
             if hasattr(new_spec, 'z'):
                 try:
@@ -454,12 +451,14 @@ class XSpecGui(QMainWindow):
                         zval = float(new_spec.z)
                     except Exception:
                         zval = 0.0
-            ll['z'] = zval
-            self.pltline_widg.setz('{:.6f}'.format(zval))  # seguro: ya hay 'List' válido
+        ll['z'] = float(zval)
+        self.pltline_widg.zbox.setText('{:.6f}'.format(float(zval)))  # NO usamos setz()
 
-        # Compartir referencia y redibujar
+        # Compartir la MISMA referencia de llist entre widgets
         self.spec_widg.llist = ll
         self.pltline_widg.spec_widg = self.spec_widg
+
+        # Redibujo final (espectro + líneas si Plot=True)
         self.spec_widg.on_draw()
         self.spec_widg.canvas.draw_idle()
 
